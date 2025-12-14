@@ -1,0 +1,26 @@
+services:
+  app:
+    build: .
+    container_name: email_microservice
+    ports:
+      - "8000:8000"
+    environment:
+      - MAIL_SERVER=mailhog
+      - MAIL_PORT=1025
+      - MAIL_USERNAME=
+      - MAIL_PASSWORD=
+      - MAIL_FROM=noreply@teszt.hu
+      - MAIL_SSL_TLS=False
+      - MAIL_STARTTLS=False
+      - USE_CREDENTIALS=False
+    depends_on:
+      - mailhog
+    volumes:
+      - ./src:/app/src
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog_server
+    ports:
+      - "1025:1025"
+      - "8025:8025"
