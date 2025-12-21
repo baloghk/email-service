@@ -2,7 +2,6 @@ from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
 from sqlalchemy.exc import SQLAlchemyError
 import aio_pika
-import asyncio
 import psutil
 import os
 

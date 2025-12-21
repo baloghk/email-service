@@ -11,3 +11,5 @@ sqlmodel>=0.0.14
 psycopg2-binary
 cryptography
 aio-pika
+psutil
+asyncio
