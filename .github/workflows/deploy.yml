@@ -67,6 +67,9 @@ jobs:
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
+          RABBITMQ_USER: ${{ secrets.RABBITMQ_USER }}
+          RABBITMQ_PASSWORD: ${{ secrets.RABBITMQ_PASSWORD }}
+          RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
           INIT_DB: "False"
         run: |
           docker compose -f docker-compose.prod.yml pull
