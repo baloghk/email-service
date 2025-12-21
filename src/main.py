@@ -1,49 +1,54 @@
-from fastapi import FastAPI, BackgroundTasks, Depends
-from fastapi_mail import FastMail, MessageSchema, MessageType, ConnectionConfig
+from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
-import uvicorn
+import aio_pika
 import os
 
 from src.database import init_db
-from src.security import get_tenant_config
-from src.models import EmailRequest
+from src.security import get_current_tenant
+from src.models import EmailRequest, Tenant
+from src.producer import publish_email_task
+
+rabbitmq_connection = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if os.getenv("INIT_DB", "False") == "True":
         await init_db()
+    
+    global rabbitmq_connection
+    print("Connecting to RabbitMQ...")
+    try:
+        rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+        rabbitmq_connection = await aio_pika.connect_robust(rabbitmq_url)
+        print("RabbitMQ Connected!")
+    except Exception as e:
+        print(f"RabbitMQ Connection Failed: {e}")
+
     yield
 
-app = FastAPI(
-    title="Email Microservice",
-    lifespan=lifespan
-)
+    if rabbitmq_connection:
+        await rabbitmq_connection.close()
+        print("RabbitMQ Connection Closed.")
 
-@app.get("/")
-def health_check():
-    return {"status": "healthy", "service": "email-service"}
+app = FastAPI(title="Email Microservice", lifespan=lifespan)
+
+async def get_rabbitmq():
+    if rabbitmq_connection is None:
+        raise HTTPException(status_code=503, detail="RabbitMQ not available")
+    return rabbitmq_connection
 
 @app.post("/emails")
 async def send_email(
     email_req: EmailRequest, 
-    background_tasks: BackgroundTasks,
-    config: ConnectionConfig = Depends(get_tenant_config)
+    tenant: Tenant = Depends(get_current_tenant),
+    connection: aio_pika.Connection = Depends(get_rabbitmq)
 ):
-    
-    template_file = f"{email_req.template_name}.html"
-    
-    message = MessageSchema(
-        subject=email_req.subject,
-        recipients=email_req.emails,
-        template_body=email_req.template_body,
-        subtype=MessageType.html
-    )
+    if not tenant.is_active:
+        raise HTTPException(status_code=403, detail="Tenant is inactive")
 
-    fm = FastMail(config)
-    
-    background_tasks.add_task(fm.send_message, message, template_name=template_file)
-    
-    return {"message": "Email sending is in progress..."}
+    email_data = email_req.dict() 
+    email_data['template_file'] = f"{email_req.template_name}.html"
 
-if __name__ == "__main__":
-    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)
+    await publish_email_task(connection, tenant.id, email_data)
+    
+    return {"message": "Email queued successfully", "status": "queued"}

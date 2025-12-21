@@ -1,6 +1,5 @@
-import os
 from cryptography.fernet import Fernet
-import base64
+import os
 
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", Fernet.generate_key().decode())
 

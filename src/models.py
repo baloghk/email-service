@@ -1,6 +1,7 @@
 from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field
 from pydantic import BaseModel, EmailStr
+from datetime import datetime
 
 class Tenant(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -22,3 +23,9 @@ class EmailRequest(BaseModel):
     subject: str
     template_name: str
     template_body: Dict[str, Any]
+
+
+class ProcessedEmailMessage(SQLModel, table=True):
+    message_id: str = Field(primary_key=True, index=True)
+    processed_at: datetime = Field(default_factory=datetime.utcnow)
+    status: str
