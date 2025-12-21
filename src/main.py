@@ -1,11 +1,12 @@
 from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
+from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 import aio_pika
 import psutil
 import os
 
-from src.database import get_session, init_db
+from src.database import engine
 from src.security import get_current_tenant
 from src.models import EmailRequest, Tenant
 from src.producer import publish_email_task
@@ -33,7 +34,7 @@ async def health_check():
     }
 
     try:
-        async with get_session() as session:
+        async with AsyncSession(engine) as session:
             await session.execute("SELECT 1")
         status["database"]["status"] = "ok"
     except SQLAlchemyError:
