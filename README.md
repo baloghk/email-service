@@ -30,21 +30,23 @@ cd email-service
 
 ### 2. Environment Configuration
 
-The project uses environment variables primarily for the database connection. Copy the example file:
+The project uses environment variables for database setup. Copy the example file:
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and ensure the database settings are correct. The defaults work out-of-the-box with the provided `docker-compose.yml`:
+Open `.env` and configure your settings:
 
 ```env
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=postgres
 POSTGRES_DB=email_db
 INIT_DB=True
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/email_db
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/email_db
 ```
+
+When running with Docker Compose, the `DATABASE_URL` is automatically overridden to use the Docker service name (`db` instead of `localhost`).
 
 ### 3. Run with Docker
 
@@ -54,26 +56,31 @@ Start the application, database, and Mailhog:
 docker-compose up --build
 ```
 
-- **API URL:** http://localhost:8000
+The setup includes:
+- **Application Container:** Runs FastAPI application at http://localhost:8000
+- **PostgreSQL Container:** Database available at `localhost:5432` (user: `postgres`, password: `postgres`)
+- **Mailhog Container:** SMTP server at `localhost:1025` and UI at http://localhost:8025
+
+After startup, the database will automatically initialize tables if `INIT_DB=True`.
+
+### 4. Configure Client Credentials
+
+The service requires client credentials to send emails. You'll need to set up a configuration entry in the database with:
+
+- A unique API key for authentication
+- SMTP server credentials (server, port, username, password)
+- Sender email address
+- TLS/SSL settings
+
+Contact your administrator to set up your client credentials, or use the management API to register a new configuration.
+
+Once configured, you'll receive an API key to authenticate your requests.
+
+### 5. Verify the Setup
+
+- **API Docs:** http://localhost:8000/docs
+- **Health Check:** http://localhost:8000/
 - **Mailhog UI:** http://localhost:8025
-- **Swagger UI:** http://localhost:8000/docs
-
-### 4. Create a Tenant (Crucial Step!)
-
-Since configurations are stored in the database, you must create a tenant to send emails. Access the database shell:
-
-```bash
-docker exec -it email_db psql -U postgres -d email_db
-```
-
-Insert a test tenant configured for Mailhog:
-
-```sql
-INSERT INTO tenant (name, api_key, mail_username, mail_password, mail_from, mail_port, mail_server, mail_starttls, mail_ssl_tls, use_credentials, validate_certs)
-VALUES ('Dev Tenant', 'my-secret-api-key', '', '', 'test@example.com', 1025, 'mailhog', false, false, false, false);
-```
-
-> **Note:** If you want to use Gmail or another provider, replace the values (port 587, `smtp.gmail.com`, etc.) and set `use_credentials` to `true`.
 
 ## API Documentation
 
@@ -81,11 +88,11 @@ Access the interactive API documentation at http://localhost:8000/docs
 
 ### Authentication
 
-This service uses header-based authentication. You must provide the correct API Key in the header for every request to `/emails`:
+All requests to the email endpoint require API key authentication via the `X-API-KEY` header:
 
 | Header | Value |
 |--------|-------|
-| `X-API-KEY` | The key stored in the database (e.g., `my-secret-api-key`) |
+| `X-API-KEY` | Your assigned API key (e.g., `my-secret-api-key`) |
 
 ## Endpoints
 
