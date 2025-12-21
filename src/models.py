@@ -16,6 +16,7 @@ class Tenant(SQLModel, table=True):
     mail_ssl_tls: bool = False
     use_credentials: bool = True
     validate_certs: bool = True
+    is_active: bool = True
 
 
 class EmailRequest(BaseModel):

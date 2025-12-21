@@ -1,10 +1,8 @@
 from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import text
 import aio_pika
-import psutil
-import os
 
 from src.database import engine
 from src.security import get_current_tenant
@@ -12,16 +10,15 @@ from src.models import EmailRequest, Tenant
 from src.producer import publish_email_task
 from src.rabbitmq import connect_rabbitmq, get_connection
 
-rabbitmq_connection = None
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_rabbitmq()
     yield
-    
-    global rabbitmq_connection
-    if rabbitmq_connection:
-        await rabbitmq_connection.close()
+    try:
+        connection = get_connection()
+        await connection.close()
+    except RuntimeError:
+        pass
 
 app = FastAPI(title="Email Microservice", lifespan=lifespan)
 
@@ -30,33 +27,38 @@ async def health_check():
     status = {
         "database": {"status": "unknown"},
         "rabbitmq": {"status": "unknown", "queue_length": None},
-        "worker": {"status": "unknown"}
     }
 
     try:
         async with AsyncSession(engine) as session:
-            await session.execute("SELECT 1")
+            await session.exec(text("SELECT 1"))
         status["database"]["status"] = "ok"
-    except SQLAlchemyError:
+    except Exception as e:
+        print(f"DB Health Check Error: {e}")
         status["database"]["status"] = "error"
 
-    if rabbitmq_connection and not rabbitmq_connection.is_closed:
-        status["rabbitmq"]["status"] = "ok"
-        try:
-            channel = await rabbitmq_connection.channel()
-            queue = await channel.declare_queue("email_queue", passive=True)
-            status["rabbitmq"]["queue_length"] = queue.message_count
-        except Exception as e:
-            status["rabbitmq"]["status"] = "error"
-            status["rabbitmq"]["queue_length"] = None
-    else:
-        status["rabbitmq"]["status"] = "error"
-
     try:
-        worker_running = any("worker" in p.name() or "src.worker" in p.cmdline() for p in psutil.process_iter())
-        status["worker"]["status"] = "ok" if worker_running else "stopped"
-    except ImportError:
-        status["worker"]["status"] = "unknown"
+        rmq_conn = get_connection()
+        
+        if not rmq_conn.is_closed:
+            status["rabbitmq"]["status"] = "ok"
+            try:
+                async with rmq_conn.channel() as channel:
+                    queue = await channel.declare_queue("email_queue", passive=True)
+                    status["rabbitmq"]["queue_length"] = queue.declaration_result.message_count
+            
+            except aio_pika.exceptions.ChannelClosed as e:
+                print(f"RabbitMQ Queue Error (Not Found): {e}")
+                status["rabbitmq"]["queue_length"] = "error: queue not found"
+            
+            except Exception as e:
+                print(f"RabbitMQ General Error: {e}")
+                status["rabbitmq"]["queue_length"] = f"error: {str(e)}"
+        else:
+            status["rabbitmq"]["status"] = "closed"
+            
+    except RuntimeError:
+        status["rabbitmq"]["status"] = "error (not connected)"
 
     return status
 
