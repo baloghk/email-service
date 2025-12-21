@@ -1,47 +1,70 @@
 from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
+from sqlalchemy.exc import SQLAlchemyError
 import aio_pika
+import asyncio
+import psutil
 import os
 
-from src.database import init_db
+from src.database import get_session, init_db
 from src.security import get_current_tenant
 from src.models import EmailRequest, Tenant
 from src.producer import publish_email_task
+from src.rabbitmq import connect_rabbitmq, get_connection
 
 rabbitmq_connection = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if os.getenv("INIT_DB", "False") == "True":
-        await init_db()
+    await connect_rabbitmq()
+    yield
     
     global rabbitmq_connection
-    print("Connecting to RabbitMQ...")
-    try:
-        rabbitmq_url = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
-        rabbitmq_connection = await aio_pika.connect_robust(rabbitmq_url)
-        print("RabbitMQ Connected!")
-    except Exception as e:
-        print(f"RabbitMQ Connection Failed: {e}")
-
-    yield
-
     if rabbitmq_connection:
         await rabbitmq_connection.close()
-        print("RabbitMQ Connection Closed.")
 
 app = FastAPI(title="Email Microservice", lifespan=lifespan)
 
-async def get_rabbitmq():
-    if rabbitmq_connection is None:
-        raise HTTPException(status_code=503, detail="RabbitMQ not available")
-    return rabbitmq_connection
+@app.get("/health")
+async def health_check():
+    status = {
+        "database": {"status": "unknown"},
+        "rabbitmq": {"status": "unknown", "queue_length": None},
+        "worker": {"status": "unknown"}
+    }
+
+    try:
+        async with get_session() as session:
+            await session.execute("SELECT 1")
+        status["database"]["status"] = "ok"
+    except SQLAlchemyError:
+        status["database"]["status"] = "error"
+
+    if rabbitmq_connection and not rabbitmq_connection.is_closed:
+        status["rabbitmq"]["status"] = "ok"
+        try:
+            channel = await rabbitmq_connection.channel()
+            queue = await channel.declare_queue("email_queue", passive=True)
+            status["rabbitmq"]["queue_length"] = queue.message_count
+        except Exception as e:
+            status["rabbitmq"]["status"] = "error"
+            status["rabbitmq"]["queue_length"] = None
+    else:
+        status["rabbitmq"]["status"] = "error"
+
+    try:
+        worker_running = any("worker" in p.name() or "src.worker" in p.cmdline() for p in psutil.process_iter())
+        status["worker"]["status"] = "ok" if worker_running else "stopped"
+    except ImportError:
+        status["worker"]["status"] = "unknown"
+
+    return status
 
 @app.post("/emails")
 async def send_email(
     email_req: EmailRequest, 
     tenant: Tenant = Depends(get_current_tenant),
-    connection: aio_pika.Connection = Depends(get_rabbitmq)
+    connection: aio_pika.Connection = Depends(get_connection)
 ):
     if not tenant.is_active:
         raise HTTPException(status_code=403, detail="Tenant is inactive")
