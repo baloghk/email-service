@@ -7,6 +7,7 @@ from pathlib import Path
 
 from src.database import get_session
 from src.models import Tenant
+from src.utils import decrypt_data
 
 api_key_header = APIKeyHeader(name="X-API-KEY", auto_error=False)
 
@@ -33,10 +34,12 @@ async def get_tenant_config(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid API Key"
         )
+    
+    real_password = decrypt_data(tenant.mail_password)
 
     return ConnectionConfig(
         MAIL_USERNAME=tenant.mail_username,
-        MAIL_PASSWORD=tenant.mail_password,
+        MAIL_PASSWORD=real_password,
         MAIL_FROM=tenant.mail_from,
         MAIL_PORT=tenant.mail_port,
         MAIL_SERVER=tenant.mail_server,
