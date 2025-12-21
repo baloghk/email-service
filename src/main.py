@@ -1,53 +1,34 @@
-import os
-from pathlib import Path
-from fastapi import FastAPI, BackgroundTasks, HTTPException
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig, MessageType
-from pydantic import BaseModel, EmailStr
-from typing import Dict, List, Any
-from dotenv import load_dotenv
+from fastapi import FastAPI, BackgroundTasks, Depends
+from fastapi_mail import FastMail, MessageSchema, MessageType, ConnectionConfig
+from contextlib import asynccontextmanager
 import uvicorn
+import os
 
-load_dotenv()
+from src.database import init_db
+from src.security import get_tenant_config
+from src.models import EmailRequest
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if os.getenv("INIT_DB", "False") == "True":
+        await init_db()
+    yield
 
 app = FastAPI(
     title="Email Microservice",
-    description="Microservice for sending templated emails via SMTP",
-    version="1.0.0"
+    lifespan=lifespan
 )
-
-BASE_DIR = Path(__file__).resolve().parent
-TEMPLATE_FOLDER = BASE_DIR / "templates"
-
-conf = ConnectionConfig(
-    MAIL_USERNAME=os.getenv("MAIL_USERNAME", ""),
-    MAIL_PASSWORD=os.getenv("MAIL_PASSWORD", ""),
-    MAIL_FROM=os.getenv("MAIL_FROM", "test@example.com"),
-    MAIL_PORT=int(os.getenv("MAIL_PORT", 1025)),
-    MAIL_SERVER=os.getenv("MAIL_SERVER", "localhost"),
-    MAIL_FROM_NAME=os.getenv("MAIL_FROM_NAME", "Example App"),
-    MAIL_STARTTLS=os.getenv("MAIL_STARTTLS") == "True",
-    MAIL_SSL_TLS=os.getenv("MAIL_SSL_TLS") == "True",
-    USE_CREDENTIALS=os.getenv("USE_CREDENTIALS") == "True",
-    VALIDATE_CERTS=os.getenv("VALIDATE_CERTS") == "True",
-    TEMPLATE_FOLDER=TEMPLATE_FOLDER
-)
-
-class EmailRequest(BaseModel):
-    emails: List[EmailStr]
-    subject: str
-    template_name: str
-    template_body: Dict[str, Any]
 
 @app.get("/")
 def health_check():
-    return {
-        "status": "healthy",
-        "service": "EmailService",
-        "version": "1.0.0"
-    }
+    return {"status": "healthy", "service": "email-service"}
 
-@app.post("/send")
-async def send_email(email_req: EmailRequest, background_tasks: BackgroundTasks):
+@app.post("/emails")
+async def send_email(
+    email_req: EmailRequest, 
+    background_tasks: BackgroundTasks,
+    config: ConnectionConfig = Depends(get_tenant_config)
+):
     
     template_file = f"{email_req.template_name}.html"
     
@@ -58,13 +39,11 @@ async def send_email(email_req: EmailRequest, background_tasks: BackgroundTasks)
         subtype=MessageType.html
     )
 
-    fm = FastMail(conf)
-
-    try:
-        background_tasks.add_task(fm.send_message, message, template_name=template_file)
-        return {"message": "Email sending is in progress..", "recipients": email_req.emails}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    fm = FastMail(config)
+    
+    background_tasks.add_task(fm.send_message, message, template_name=template_file)
+    
+    return {"message": "Email sending is in progress..."}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=True)
