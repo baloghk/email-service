@@ -44,7 +44,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  deploy:
+  deploy-to-home-server:
     needs: build-and-push
     runs-on: [self-hosted, linux]
     
