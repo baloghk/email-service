@@ -18,6 +18,7 @@ services:
         condition: service_started
     volumes:
       - ./src:/app/src
+      - media_data:/app/media
 
   worker:
     build: .
@@ -37,6 +38,7 @@ services:
         condition: service_healthy
     volumes:
       - ./src:/app/src
+      - media_data:/app/media
 
   db:
     image: postgres:15-alpine
@@ -80,3 +82,4 @@ services:
 
 volumes:
   postgres_data:
+  media_data:

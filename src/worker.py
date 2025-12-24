@@ -5,7 +5,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 import aio_pika
 import asyncio
 import json
+from pydantic import ValidationError
+from src.models import EmailQueuePayload
 import os
+from pathlib import Path
 
 from src.database import engine
 from src.models import Tenant, ProcessedEmailMessage
@@ -25,11 +28,18 @@ async def is_already_processed(session: AsyncSession, message_id: str) -> bool:
 
 async def process_email(message: aio_pika.IncomingMessage):
     async with message.process(requeue=False):
+        attachment_files: list[Path] = []
         try:
-            payload = json.loads(message.body.decode())
-            message_id = payload["message_id"]
-            tenant_id = payload["tenant_id"]
-            email_data = payload["email"]
+            payload_dict  = json.loads(message.body.decode("utf-8"))
+            try:
+                payload = EmailQueuePayload.model_validate(payload_dict)
+            except ValidationError as e:
+                print("Invalid queue message schema:", e)
+                return
+
+            message_id = payload.message_id
+            tenant_id = payload.tenant_id
+            email_data = payload.email
 
             print(f"[{message_id}] Processing email for tenant {tenant_id}")
 
@@ -67,11 +77,26 @@ async def process_email(message: aio_pika.IncomingMessage):
                     TEMPLATE_FOLDER="/app/src/templates" if os.path.exists("/app/src/templates") else "/app/templates"
                 )
 
+                attachments_to_send = []
+                if "attachments" in email_data and email_data["attachments"]:
+                    for att in email_data["attachments"]:
+                        file_path = Path(att["path"])
+                        
+                        if file_path.exists():
+                            attachments_to_send.append(str(file_path))
+                            
+                            attachment_files.append(file_path)
+                            
+                            print(f"[{message_id}] Attachment added: {att['filename']} from {file_path}")
+                        else:
+                            print(f"[{message_id}] Attachment file not found: {file_path}")
+
                 email = MessageSchema(
                     subject=email_data["subject"],
                     recipients=email_data["emails"],
                     template_body=email_data.get("template_body", {}),
-                    subtype=MessageType.html
+                    subtype=MessageType.html,
+                    attachments=attachments_to_send if attachments_to_send else []
                 )
 
                 fm = FastMail(conf)
@@ -87,10 +112,27 @@ async def process_email(message: aio_pika.IncomingMessage):
                 session.add(processed)
                 await session.commit()
 
-                print(f"[{message_id}] Email sent successfully")
+                print(f"[{message_id}] Email sent successfully with {len(attachments_to_send)} attachment(s)")
+
+                for file_path in attachment_files:
+                    try:
+                        file_path.unlink()
+                        print(f"[{message_id}] Attachment deleted: {file_path}")
+                    except Exception as e:
+                        print(f"[{message_id}] Failed to delete attachment {file_path}: {e}")
         
         except Exception as e:
             print(f"Error processing message: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            for file_path in attachment_files:
+                try:
+                    if file_path.exists():
+                        file_path.unlink()
+                        print(f"Attachment deleted after error: {file_path}")
+                except Exception as cleanup_error:
+                    print(f"Failed to cleanup attachment {file_path}: {cleanup_error}")
 
 async def main():
     while True:

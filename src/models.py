@@ -30,3 +30,14 @@ class ProcessedEmailMessage(SQLModel, table=True):
     message_id: str = Field(primary_key=True, index=True)
     processed_at: datetime = Field(default_factory=datetime.utcnow)
     status: str
+
+class AttachmentDTO(BaseModel):
+    path: str
+    filename: str
+    content_type: Optional[str] = "application/octet-stream"
+
+
+class EmailQueuePayload(BaseModel):
+    message_id: str
+    tenant_id: int
+    email: Dict[str, Any]

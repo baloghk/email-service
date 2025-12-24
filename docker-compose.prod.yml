@@ -18,6 +18,8 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
+    volumes:
+      - media_data:/app/media
 
   worker:
     image: ${IMAGE_NAME}:latest
@@ -35,6 +37,8 @@ services:
         condition: service_healthy
     networks:
       - default
+    volumes:
+      - media_data:/app/media
 
   db:
     image: postgres:15-alpine
@@ -76,3 +80,4 @@ services:
 
 volumes:
   postgres_data:
+  media_data:
