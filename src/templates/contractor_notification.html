@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; }
+        .container { max-width: 700px; margin: 0 auto; border: 1px solid #ccc; }
+        .header { background-color: #007bff; color: white; padding: 15px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { text-align: left; padding: 10px; background-color: #f2f2f2; border-bottom: 1px solid #ddd; width: 30%; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; }
+        .desc { background-color: #fff3cd; padding: 15px; border: 1px solid #ffeeba; margin-top: 15px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Új Árajánlatkérés Érkezett!</h1>
+        </div>
+        
+        <table>
+            <tr><th>Név</th><td>{{ name }}</td></tr>
+            <tr><th>Email</th><td><a href="mailto:{{ email }}">{{ email }}</a></td></tr>
+            <tr><th>Telefon</th><td>{{ phone_number }}</td></tr>
+            <tr><th>Projekt Típus</th><td>{{ project_type }}</td></tr>
+            <tr><th>Helyszín</th><td>{{ location }}</td></tr>
+            <tr><th>Időszak</th><td>{{ start_date }} - {{ end_date }}</td></tr>
+            <tr><th>Csatolmány</th><td>{{ 'Van (lásd melléklet)' if has_attachment else 'Nincs' }}</td></tr>
+        </table>
+
+        <h3>Leírás / Megjegyzés:</h3>
+        <div class="desc">
+            {{ description }}
+        </div>
+        
+        <p style="font-size: 12px; color: #666; margin-top: 20px;">
+            A kérés beérkezésének ideje: {{ created_at }}
+        </p>
+    </div>
+</body>
+</html>
